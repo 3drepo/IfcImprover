@@ -24,6 +24,11 @@
 #include <map>
 #include <vector>
 
+/**
+* Process the CSV file and gather the patterns to match
+* @param csvFile location of the file
+* @return returns a map of {Metadata Field, {Metadata Value, Material name}}
+*/
 static std::map<std::string, std::map<std::string, std::string>> processCSVFile(const std::string &csvFile)
 {
 	std::ifstream fs(csvFile);
@@ -49,13 +54,13 @@ static std::map<std::string, std::map<std::string, std::string>> processCSVFile(
 					break;
 				case 1:
 					metaFieldName = item;
-					if (dataToMat.find(metaFieldName) == dataToMat.end())
+					if (!metaFieldName.empty() && dataToMat.find(metaFieldName) == dataToMat.end())
 					{
 						dataToMat[metaFieldName] = std::map<std::string, std::string>();
 					}
 					break;
 				default:
-					if (!item.empty())
+					if (!metaFieldName.empty() && !item.empty())
 					{
 						if (dataToMat[metaFieldName].find(item) == dataToMat[metaFieldName].end())
 							dataToMat[metaFieldName][item] = matName;
@@ -70,6 +75,11 @@ static std::map<std::string, std::map<std::string, std::string>> processCSVFile(
 	return dataToMat;
 }
 
+/**
+* Get a mapping of Material name to it's IfcRelAssociatesMaterial and IfcSurfaceStyle
+* @param ifcfile file to examin
+* @return return a map of material name to it's IFC entities
+*/
 static std::map < std::string, std::pair<IfcSchema::IfcRelAssociatesMaterial*, IfcSchema::IfcSurfaceStyle*> >
 getRelMatMap(IfcParse::IfcFile &ifcfile)
 {
@@ -111,6 +121,11 @@ getRelMatMap(IfcParse::IfcFile &ifcfile)
 	return matToIfcRelMat;
 }
 
+/**
+* Clones a IfcGeometricRepresentationItem
+* @param org the item to clone
+* @returns a new item identitical to org, without the Entity reference
+*/
 static IfcSchema::IfcGeometricRepresentationItem* 
 cloneGeoItem
 (const IfcSchema::IfcGeometricRepresentationItem* org)
@@ -418,13 +433,29 @@ cloneGeoItem
 	return res;
 }
 
+/**
+* Extract IfcGeometricRepresentationItem items from IfcRepresentationItem
+* This can be a recursive function if the Representation Item is actually a mappedItem
+* User should pass in a nullptr for newItem param, and check if the pointer has changed 
+* after the function is called. if it has been changed, the user needs to updates the references to 
+* the new entity
+* @param repItem the Representation item to extract from
+* @param geoItems list of RepresentationItems that has been found from previous runs
+* @param geoList A global list tracker to track the IFC Representation Items seen
+* @param geoReps A global list tracker to track the IFC Representation Map seen
+* @param geoList A global list tracker to track the IFC Representation seen
+* @param ifcfile the current IFC File handler
+* @param newItem returns a pointer to a new instance of the item if a new instance is instantiated
+* @return returns a set of IfcGeometricRepresentationItem owned by this entity
+*/
 std::set<IfcSchema::IfcGeometricRepresentationItem*>
-extractGeoRepItems(IfcSchema::IfcRepresentationItem* repItem,
-std::set<IfcSchema::IfcRepresentationItem*> &geoItems,
-std::set<IfcSchema::IfcRepresentation*> &geoReps,
-std::set<IfcSchema::IfcRepresentationMap*> &seenMaps,
-IfcParse::IfcFile &ifcFile,
-IfcSchema::IfcRepresentationItem* &newItem
+extractGeoRepItems(
+	IfcSchema::IfcRepresentationItem			*repItem,
+	std::set<IfcSchema::IfcRepresentationItem*> &geoItems,
+	std::set<IfcSchema::IfcRepresentation*>		&geoReps,
+	std::set<IfcSchema::IfcRepresentationMap*>	&seenMaps,
+	IfcParse::IfcFile							&ifcFile,
+	IfcSchema::IfcRepresentationItem*			&newItem
 )
 {
 	std::set<IfcSchema::IfcGeometricRepresentationItem*> items;
@@ -510,12 +541,23 @@ IfcSchema::IfcRepresentationItem* &newItem
 	return items;
 }
 
+/**
+* Given a IfcProduct, find all of its IfcGeometricRepresentationItems
+* Clone instanced entities if found in the process.
+* @param relProd IfcProduct in question
+* @param geoItems list of seen IfcRepresentationItem from previous processes
+* @param geoReps list of seen IfcRepresentation from previous processes
+* @param seenMaps list of seen IfcRepresentationMap from previous processes
+* @param ifcFile ifcFile with the information
+* @return returns a set of IfcGeometricRepresentationItems associated with the product
+*/
 static std::set<IfcSchema::IfcGeometricRepresentationItem*> 
-findGeoRepItems(const IfcSchema::IfcProduct *relProd,
-std::set<IfcSchema::IfcRepresentationItem*> &geoItems,
-std::set<IfcSchema::IfcRepresentation*> &geoReps,
-std::set<IfcSchema::IfcRepresentationMap*> &seenMaps,
-	IfcParse::IfcFile &ifcFile)
+findGeoRepItems(
+	const IfcSchema::IfcProduct					*relProd,
+	std::set<IfcSchema::IfcRepresentationItem*> &geoItems,
+	std::set<IfcSchema::IfcRepresentation*>		&geoReps,
+	std::set<IfcSchema::IfcRepresentationMap*>	&seenMaps,
+	IfcParse::IfcFile							&ifcFile)
 {
 	std::set<IfcSchema::IfcGeometricRepresentationItem*> res;
 	auto shapRep = dynamic_cast<const IfcSchema::IfcProductRepresentation*>(relProd->Representation());
@@ -554,6 +596,130 @@ std::set<IfcSchema::IfcRepresentationMap*> &seenMaps,
 }
 
 /**
+* Generate a map of Representation Item to it's IfcStyled Item
+* @param ifcfile ifcFile with all the information
+* @return returns a map of representation item to styled Item
+*/
+std::map<IfcSchema::IfcRepresentationItem*, IfcSchema::IfcStyledItem*>
+	getStyleItemForGeoReps(IfcParse::IfcFile &ifcfile)
+{
+	std::map<IfcSchema::IfcRepresentationItem*, IfcSchema::IfcStyledItem*> geoRepToStyle;
+
+	auto styledItem = ifcfile.entitiesByType("IfcStyledItem");
+	for (const auto &style : *styledItem)
+	{
+		auto s = dynamic_cast<IfcSchema::IfcStyledItem*>(style);
+		if (s->hasItem())
+			geoRepToStyle[s->Item()] = s;
+	}
+
+	return geoRepToStyle;
+}
+
+/**
+* Given a metadata ID, update all its references with the given material
+* @param ifcfile the current IFC File handler
+* @param material IFCRelAssociatesMaterial tag that holds all the relationship to the material in question
+* @param surfaceStyle IFCSurfaceStyle that has the details of this material
+* @param metaId the IFC ID of the metadata
+* @param geoList A global list tracker to track the IFC Representation Items seen
+* @param geoReps A global list tracker to track the IFC Representation Map seen
+* @param geoList A global list tracker to track the IFC Representation seen
+* @param geoRepToStyle A mapping of representation items to its styled Item
+* @param newEntities A list to keep track of new entities that needs to be added into the IFC file after
+*/
+void updateMaterial(
+	IfcParse::IfcFile                                                     &ifcfile,
+	IfcSchema::IfcRelAssociatesMaterial                                   *material,
+	IfcSchema::IfcSurfaceStyle                                            *surfaceStyle,
+	const int                                                              &metaId,
+	std::set<IfcSchema::IfcRepresentationItem*>                            &geoList,
+	std::set<IfcSchema::IfcRepresentationMap*>                             &seenMaps,
+	std::set<IfcSchema::IfcRepresentation*>                                &geoReps,
+	std::map<IfcSchema::IfcRepresentationItem*, IfcSchema::IfcStyledItem*> &geoRepToStyle,
+	IfcEntityList::ptr                                                     &newEntities
+
+)
+{
+	
+	IfcTemplatedEntityList< IfcSchema::IfcRoot >::ptr relatingObjects;
+	std::set<IfcSchema::IfcGeometricRepresentationItem*> geoItems;
+	std::set<IfcSchema::IfcRoot*> objs;
+
+	if (material)
+	{
+		relatingObjects = material->RelatedObjects();
+		objs.insert(relatingObjects->begin(), relatingObjects->end());
+	}	
+
+	auto refs = ifcfile.entitiesByReference(metaId);
+	if (refs)
+	{
+		for (const auto & r : *refs)
+		{
+			auto refs2 = ifcfile.entitiesByReference(r->entity->id());
+			if (!refs2)continue;
+			for (const auto & r2 : *refs2)
+			{
+				if (r2->type() == IfcSchema::Type::Enum::IfcRelDefinesByProperties)
+				{
+					auto relProp = dynamic_cast<const IfcSchema::IfcRelDefinesByProperties*>(r2);
+					auto relObjs = relProp->RelatedObjects();
+					for (const auto & r3 : *relObjs)
+					{
+						auto relProd = dynamic_cast<const IfcSchema::IfcProduct*>(r3);
+						std::set<IfcSchema::IfcGeometricRepresentationItem*> pGeoItems = findGeoRepItems(relProd, geoList, geoReps, seenMaps, ifcfile);
+						geoItems.insert(pGeoItems.begin(), pGeoItems.end());
+						geoList.insert(pGeoItems.begin(), pGeoItems.end());
+
+						if (objs.find(r3) == objs.end())
+						{
+							relatingObjects->push(r3);
+						}
+					}
+				}
+				else
+				{
+					std::cerr << "Unexpected type : " << r2->type() << std::endl;
+					std::cout << r2->entity->toString() << std::endl;
+				}
+			}
+		}
+	}
+	
+
+	//Add objects to Material link
+	if (material)
+		material->setRelatedObjects(relatingObjects);
+	//Create surface items that references the geo items
+	if (surfaceStyle)
+	{
+		IfcEntityList::ptr surfaceList(new IfcEntityList);
+		surfaceList->push(surfaceStyle);
+		for (auto &geoItem : geoItems)
+		{
+
+			if (geoRepToStyle.find(geoItem) != geoRepToStyle.end())
+			{
+				geoRepToStyle[geoItem]->setItem(nullptr);
+				//It already has a surface item. does that mean it already has a material?
+			}
+
+			//No surface style
+			IfcTemplatedEntityList< IfcSchema::IfcPresentationStyleAssignment >::ptr list(new IfcTemplatedEntityList< IfcSchema::IfcPresentationStyleAssignment >);
+
+			auto styleAssignment = new IfcSchema::IfcPresentationStyleAssignment(surfaceList);
+			list->push(styleAssignment);
+			IfcSchema::IfcStyledItem* newStyleItem = new IfcSchema::IfcStyledItem(geoItem, list, std::string());
+			newEntities->push(newStyleItem);
+
+		}
+
+	}
+
+}
+
+/**
 * Update the IFC with materials depicted from the given matMap
 * This function will update the IFC and writes the results in outputFile
 * @param inputFile input IFC file
@@ -570,123 +736,42 @@ static void updateFile(const std::string &inputFile, const std::string &outputfi
 		return;
 	}
 
-	std::map<IfcSchema::IfcRepresentationItem*, IfcSchema::IfcStyledItem*> geoRepToStyle;
+	auto geoRepToStyle = getStyleItemForGeoReps(ifcfile);
+	auto matToIfcRelMat = getRelMatMap(ifcfile);
 
-	auto styledItem = ifcfile.entitiesByType("IfcStyledItem");
-	for (const auto &style : *styledItem)
-	{
-		auto s = dynamic_cast<IfcSchema::IfcStyledItem*>(style);
-		if (s->hasItem())
-			geoRepToStyle[s->Item()] = s;
-	}
-
-	std::map < std::string, std::pair<IfcSchema::IfcRelAssociatesMaterial*, IfcSchema::IfcSurfaceStyle*>> matToIfcRelMat = getRelMatMap(ifcfile);
+	//Entity tracker
 	std::set<IfcSchema::IfcRepresentationItem*> geoList;
 	std::set<IfcSchema::IfcRepresentationMap*> seenMaps;
 	std::set<IfcSchema::IfcRepresentation*> geoReps;
 
 	auto metadataEntities = ifcfile.entitiesByType("IfcPropertySingleValue");
 	IfcEntityList::ptr newEntities(new IfcEntityList());
+	
+	//Loop through all Metadata entities to find matching metadata field
 	for (const auto &meta : *metadataEntities)
 	{
 		auto singleProp = dynamic_cast<const IfcSchema::IfcPropertySingleValue*>(meta);
 		if (singleProp->hasNominalValue())
 		{
-			std::string fieldName = singleProp->Name();
-			std::string value = singleProp->NominalValue()->valueAsString();
-			bool debug = value == "(FAI)";
-			auto it = matMap.find(fieldName);
+			auto it = matMap.find(singleProp->Name());
 			if (it != matMap.end())
 			{
 				auto &valueMap = it->second;
-				auto valueIt = valueMap.find(value);
+				auto valueIt = valueMap.find(singleProp->NominalValue()->valueAsString());
 				if (valueIt != valueMap.end())
 				{
-					const auto matName = valueIt->second;
-					auto matIt = matToIfcRelMat.find(matName);
-
-
+					auto matIt = matToIfcRelMat.find(valueIt->second);
 					if (matIt != matToIfcRelMat.end())
 					{
-						IfcTemplatedEntityList< IfcSchema::IfcRoot >::ptr relatingObjects;
-						std::set<IfcSchema::IfcRoot*> objs;
-						if (matIt->second.first)
-						{
-							relatingObjects = matIt->second.first->RelatedObjects();
-							 objs.insert(relatingObjects->begin(), relatingObjects->end());
-						}
-
-						std::set<IfcSchema::IfcGeometricRepresentationItem*> geoItems;
-						
-						auto refs = ifcfile.entitiesByReference(singleProp->entity->id());
-						for (const auto & r : *refs)
-						{
-							auto refs2 = ifcfile.entitiesByReference(r->entity->id());
-							for (const auto & r2 : *refs2)
-							{
-								if (r2->type() == IfcSchema::Type::Enum::IfcRelDefinesByProperties)
-								{
-									auto relProp = dynamic_cast<const IfcSchema::IfcRelDefinesByProperties*>(r2);
-									auto relObjs = relProp->RelatedObjects();
-									for (const auto & r3 : *relObjs)
-									{
-										auto relProd = dynamic_cast<const IfcSchema::IfcProduct*>(r3);
-										std::set<IfcSchema::IfcGeometricRepresentationItem*> pGeoItems = findGeoRepItems(relProd, geoList, geoReps, seenMaps, ifcfile);
-										geoItems.insert(pGeoItems.begin(), pGeoItems.end());
-										geoList.insert(pGeoItems.begin(), pGeoItems.end());
-										
-
-										if (objs.find(r3) == objs.end())
-										{
-											relatingObjects->push(r3);
-										}
-
-
-									}
-								}
-								else
-								{
-									std::cerr << "Unexpected type : " << r2->type() << std::endl;
-									std::cout << r2->entity->toString() << std::endl;
-								}
-							}
-						}
-
-						//Add objects to Material link
-						if (matIt->second.first)
-							matIt->second.first->setRelatedObjects(relatingObjects);
-						//Create surface items that references the geo items
-						if (matIt->second.second)
-						{
-							auto surfaceStyle = matIt->second.second;
-							IfcEntityList::ptr surfaceList(new IfcEntityList);
-							surfaceList->push(surfaceStyle);
-							for (auto &geoItem : geoItems)
-							{
-
-								if (geoRepToStyle.find(geoItem) != geoRepToStyle.end())
-								{
-									geoRepToStyle[geoItem]->setItem(nullptr);
-									//It already has a surface item. does that mean it already has a material?
-								}
-								
-								//No surface style
-								IfcTemplatedEntityList< IfcSchema::IfcPresentationStyleAssignment >::ptr list(new IfcTemplatedEntityList< IfcSchema::IfcPresentationStyleAssignment >);
-
-								auto styleAssignment = new IfcSchema::IfcPresentationStyleAssignment(surfaceList);
-								list->push(styleAssignment);
-								IfcSchema::IfcStyledItem* newStyleItem = new IfcSchema::IfcStyledItem(geoItem, list, std::string());
-								newEntities->push(newStyleItem);
-								
-							}
-
-						}
-						
+						//This Metadata Field/Value has a new material. Find all references and update them
+						updateMaterial(ifcfile, matIt->second.first, matIt->second.second, singleProp->entity->id(), geoList, seenMaps, geoReps, geoRepToStyle, newEntities);
 					}
 					else
 					{
-						std::cerr << "Failed to find material " << matName << std::endl;
+						std::cerr << "Failed to find material " << valueIt->second << std::endl;
 					}
+
+
 				}
 			}
 		}
@@ -695,9 +780,11 @@ static void updateFile(const std::string &inputFile, const std::string &outputfi
 			std::cout << "no nominal value: " << meta->entity->toString() << std::endl;
 		}
 	}
+	
+	//Add all the new entities into the ifc
 	ifcfile.addEntities(newEntities);
+	
 	std::ofstream os(outputfile);
-
 	os << ifcfile;
 	os.close();
 }
@@ -750,6 +837,9 @@ int main(int argc, char* argv[])
 		return EXIT_FAILURE;
 	}
 
+	//std::string inputFile = "C:\\Users\\Carmen\\Desktop\\103EW-ACM-P-Phase 1_Iss11.ifc"; //argv[1];
+	//std::string outputFile = argv[2];
+	//std::string csvFile = "C:\\Users\\Carmen\\Desktop\\103EW-ACM-P_material_mapping.csv";//argv[3];
 	std::string inputFile = argv[1];
 	std::string outputFile = argv[2];
 	std::string csvFile = argv[3];

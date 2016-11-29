@@ -24,7 +24,7 @@
 #include <map>
 #include <vector>
 
-std::map<std::string, std::map<std::string, std::string>> processCSVFile(const std::string &csvFile)
+static std::map<std::string, std::map<std::string, std::string>> processCSVFile(const std::string &csvFile)
 {
 	std::ifstream fs(csvFile);
 	std::string line;
@@ -70,7 +70,7 @@ std::map<std::string, std::map<std::string, std::string>> processCSVFile(const s
 	return dataToMat;
 }
 
-std::map < std::string, std::pair<IfcSchema::IfcRelAssociatesMaterial*, IfcSchema::IfcSurfaceStyle*> >
+static std::map < std::string, std::pair<IfcSchema::IfcRelAssociatesMaterial*, IfcSchema::IfcSurfaceStyle*> >
 getRelMatMap(IfcParse::IfcFile &ifcfile)
 {
 	std::map < std::string, std::pair<IfcSchema::IfcRelAssociatesMaterial*, IfcSchema::IfcSurfaceStyle*> > matToIfcRelMat;
@@ -111,7 +111,7 @@ getRelMatMap(IfcParse::IfcFile &ifcfile)
 	return matToIfcRelMat;
 }
 
-IfcSchema::IfcGeometricRepresentationItem* 
+static IfcSchema::IfcGeometricRepresentationItem* 
 cloneGeoItem
 (const IfcSchema::IfcGeometricRepresentationItem* org)
 {
@@ -510,7 +510,7 @@ IfcSchema::IfcRepresentationItem* &newItem
 	return items;
 }
 
-std::set<IfcSchema::IfcGeometricRepresentationItem*> 
+static std::set<IfcSchema::IfcGeometricRepresentationItem*> 
 findGeoRepItems(const IfcSchema::IfcProduct *relProd,
 std::set<IfcSchema::IfcRepresentationItem*> &geoItems,
 std::set<IfcSchema::IfcRepresentation*> &geoReps,
@@ -553,7 +553,14 @@ std::set<IfcSchema::IfcRepresentationMap*> &seenMaps,
 	return res;
 }
 
-void updateFile(const std::string &inputFile, std::string &outputfile,
+/**
+* Update the IFC with materials depicted from the given matMap
+* This function will update the IFC and writes the results in outputFile
+* @param inputFile input IFC file
+* @param outputFile output IFC file
+* @param matMap a map of {Metadata Field name , {Metadata Value, Material Name}}
+*/
+static void updateFile(const std::string &inputFile, const std::string &outputfile,
 	const std::map<std::string, std::map<std::string, std::string>> &matMap)
 {
 	IfcParse::IfcFile ifcfile;
@@ -692,20 +699,32 @@ void updateFile(const std::string &inputFile, std::string &outputfile,
 	std::ofstream os(outputfile);
 
 	os << ifcfile;
+	os.close();
 }
 
-int main(int argc, char* argv[])
+/**
+* Check if file exists
+* @param file location to check
+* @return returns true if it exists, false otherwise
+*/
+static bool fileExists(const std::string &file)
 {
-	if (argc < 4)
-	{
-		std::cerr << "Usage: " << argv[0] << " <input file> <output file> <csv file>" << std::endl;
-		return EXIT_FAILURE;
-	}
+	std::ifstream ifs(file);
+	bool res = ifs.good();
+	ifs.close();
+	return res;
+}
 
-	std::string inputFile = argv[1];
-	std::string outputFile = argv[2];
-	std::string csvFile = argv[3];
-
+/**
+* Process the IFC file based on the conditions within the CSV File
+* the function will read from inputFile and csvFile and writes the resulting 
+* IFC file in outputFile
+* @params inputFile location of input IFC file
+* @params where to write the output file
+* @params csvFile location of the CSV file
+*/
+static void processIFC(const std::string &inputFile, const std::string &outputFile, const std::string &csvFile)
+{
 	auto matMap = processCSVFile(csvFile);
 
 	if (matMap.size())
@@ -720,6 +739,36 @@ int main(int argc, char* argv[])
 		}
 		updateFile(inputFile, outputFile, matMap);
 	}
+
+}
+
+int main(int argc, char* argv[])
+{
+	if (argc < 4)
+	{
+		std::cerr << "Usage: " << argv[0] << " <input file> <output file> <csv file>" << std::endl;
+		return EXIT_FAILURE;
+	}
+
+	std::string inputFile = argv[1];
+	std::string outputFile = argv[2];
+	std::string csvFile = argv[3];
+
+	//Check input file exists
+	if (!fileExists(inputFile))
+	{
+		std::cerr << "Error: Cannot find file " << inputFile << std::endl;
+		return EXIT_FAILURE;
+	}
+
+	//Check csv file exists
+	if (!fileExists(csvFile))
+	{
+		std::cerr << "Error: Cannot find file " << csvFile << std::endl;
+		return EXIT_FAILURE;
+	}
+
+	processIFC(inputFile, outputFile, csvFile);
 
 	return EXIT_SUCCESS;
 }

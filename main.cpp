@@ -60,7 +60,7 @@ std::map<std::string, std::map<std::string, std::string>> processCSVFile(const s
 						if (dataToMat[metaFieldName].find(item) == dataToMat[metaFieldName].end())
 							dataToMat[metaFieldName][item] = matName;
 						else
-							std::cerr << "Found value mapped to multiple material: " << item << std::endl;
+							std::cerr << "Warning: " << item << " is mapped to multiple material" << std::endl;
 					}
 				}
 			}
@@ -102,7 +102,7 @@ getRelMatMap(IfcParse::IfcFile &ifcfile)
 			else
 			{
 				//Should already have an entry.
-				std::cerr << "Failed to find entry for " << mat->Name() << std::endl;
+				//std::cerr << "Failed to find Material entry for " << mat->Name() << std::endl;
 				matToIfcRelMat[mat->Name()] = { nullptr, mat};
 			}
 		}
@@ -435,12 +435,7 @@ IfcSchema::IfcRepresentationItem* &newItem
 			//This item already exists, clone it to avoid material clashing
 			newItem = cloneGeoItem(geoItem);
 			ifcFile.addEntity(newItem);
-			
-			if (geoItem->entity->id() == 245374 || geoItem->entity->id() == 245393 || geoItem->entity->id() == 245412)
-			{
-				std::cout << "Cloned item has id of " << newItem->entity->id() << " from " << geoItem->entity->id() << std::endl;
-			}
-
+					
 			geoItem = (IfcSchema::IfcGeometricRepresentationItem*)newItem;
 
 		}
@@ -632,19 +627,7 @@ void updateFile(const std::string &inputFile, std::string &outputfile,
 										std::set<IfcSchema::IfcGeometricRepresentationItem*> pGeoItems = findGeoRepItems(relProd, geoList, geoReps, seenMaps, ifcfile);
 										geoItems.insert(pGeoItems.begin(), pGeoItems.end());
 										geoList.insert(pGeoItems.begin(), pGeoItems.end());
-										/*if (debug && r3->entity->id() == 245890)
-										{*/
-											//std::cout << "found the entity" << std::endl;
-											//std::cout << "Geo items are: " << std::endl;
-											for (const auto g : pGeoItems)
-											{
-												if (g->entity->id() == 245374 || g->entity->id() == 245393 || g->entity->id() == 245412)
-												{
-													std::cout << "found geo entity in " << relProd->entity->id() << std::endl;
-												}
-												//std::cout << "\t" << g->entity->id() << std::endl; 
-											}
-										//}
+										
 
 										if (objs.find(r3) == objs.end())
 										{
@@ -673,10 +656,7 @@ void updateFile(const std::string &inputFile, std::string &outputfile,
 							surfaceList->push(surfaceStyle);
 							for (auto &geoItem : geoItems)
 							{
-								if (geoItem->entity->id() == 245374 || geoItem->entity->id() == 245393 || geoItem->entity->id() == 245412)
-								{
-									std::cout << "[" << value<<"]Setting material for " << geoItem->entity->id() << " with " << matIt->first << std::endl;
-								}
+
 								if (geoRepToStyle.find(geoItem) != geoRepToStyle.end())
 								{
 									geoRepToStyle[geoItem]->setItem(nullptr);
@@ -732,7 +712,7 @@ int main(int argc, char* argv[])
 	{
 		for (const auto &item : matMap)
 		{
-			std::cout << "Mat Item: " << item.first << std::endl;
+			std::cout << item.first << ":" << std::endl;
 			for (const auto &pair : item.second)
 			{
 				std::cout << "\t" << pair.first << " : " << pair.second << std::endl;

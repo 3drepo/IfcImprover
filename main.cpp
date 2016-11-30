@@ -25,6 +25,30 @@
 #include <vector>
 
 /**
+* Process a given line from a csv file and returns a vector of string
+* @param line the line to process
+* @return return a vector of fields, delimited by commas
+*/
+std::vector<std::string> processLine(const std::string &line)
+{
+	std::vector<std::string> fields;
+	int currentPos = 0, endPos = 0;
+	while (endPos != std::string::npos)
+	{
+		bool hasQuotes = line[currentPos] == '"';		
+		if(hasQuotes) currentPos++;
+		endPos = line.find_first_of(hasQuotes? '"' : ',', currentPos);
+		auto substring = line.substr(currentPos, endPos - currentPos);
+		if(!substring.empty())fields.push_back(substring);
+		currentPos = hasQuotes ? endPos + 2 : endPos + 1;
+	}
+
+	return fields;
+	
+}
+
+
+/**
 * Process the CSV file and gather the patterns to match
 * @param csvFile location of the file
 * @return returns a map of {Metadata Field, {Metadata Value, Material name}}
@@ -40,13 +64,20 @@ static std::map<std::string, std::map<std::string, std::string>> processCSVFile(
 		while (std::getline(fs, line))
 		{
 			std::stringstream ss(line);
-			std::string item, matName, metaFieldName;
-			std::vector<std::string> metaFieldData;
-			int count = 0;
-			while (std::getline(ss, item, ','))
+			std::string matName, metaFieldName;
+			std::vector<std::string> metaFieldData;		
+			auto fields = processLine(line);
+			if (fields.size() < 3)
 			{
+				//this line doesn't have enough fields to be valid
+				std::cerr << "Warning: Insufficient amount of entries on line: [" << line << "]. Skipping..." << std::endl;
+				continue;
+			}
+			for (int count = 0; count < fields.size(); ++count)
+			{
+				auto item = fields[count];
 				//1 is material name, 2 is field to match, 3 onwards are the matching names
-				switch (count++)
+				switch (count)
 				{
 				case 0:
 					//Material name
@@ -56,7 +87,7 @@ static std::map<std::string, std::map<std::string, std::string>> processCSVFile(
 					metaFieldName = item;
 					if (!metaFieldName.empty() && dataToMat.find(metaFieldName) == dataToMat.end())
 					{
-						dataToMat[metaFieldName] = std::map<std::string, std::string>();
+						dataToMat[metaFieldName] = std::map<std::string, std::string>();						
 					}
 					break;
 				default:
@@ -71,7 +102,6 @@ static std::map<std::string, std::map<std::string, std::string>> processCSVFile(
 			}
 		}
 	}
-
 	return dataToMat;
 }
 
@@ -824,7 +854,12 @@ static void processIFC(const std::string &inputFile, const std::string &outputFi
 				std::cout << "\t" << pair.first << " : " << pair.second << std::endl;
 			}
 		}
+
 		updateFile(inputFile, outputFile, matMap);
+	}
+	else
+	{
+		std::cerr << "Cannot find mappings from csv file!" << std::endl;
 	}
 
 }
@@ -837,9 +872,6 @@ int main(int argc, char* argv[])
 		return EXIT_FAILURE;
 	}
 
-	//std::string inputFile = "C:\\Users\\Carmen\\Desktop\\103EW-ACM-P-Phase 1_Iss11.ifc"; //argv[1];
-	//std::string outputFile = argv[2];
-	//std::string csvFile = "C:\\Users\\Carmen\\Desktop\\103EW-ACM-P_material_mapping.csv";//argv[3];
 	std::string inputFile = argv[1];
 	std::string outputFile = argv[2];
 	std::string csvFile = argv[3];

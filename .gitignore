@@ -6,3 +6,4 @@ Debug
 *.sln
 *.suo
 x64
+build
